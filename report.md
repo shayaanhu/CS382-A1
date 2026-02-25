@@ -133,3 +133,64 @@ The following four security objectives apply across all assets. Each asset is ma
 **Accountability** — Actions performed by users and administrators must be traceable. Applies to audit logs and administrative actions, ensuring non-repudiation and enabling forensic investigation.
 
 ---
+
+# Task 3 – Threat Modeling (STRIDE)
+
+## 3.1 Methodology
+
+Threat modeling was performed using the STRIDE framework, applied systematically across the six required threat areas: authentication, authorization, data storage, API communication, logging and monitoring, and administrative access. Each threat was assessed using impact × likelihood reasoning to assign a risk level of Low, Medium, or High.
+
+---
+
+## 3.2 Threat Surface Diagram
+
+![Threat Surface Diagram](./threat_surface_diagram.png)
+
+The diagram annotates the architecture with five identified threat surfaces (TS1–TS5), each indicated by a red label. Dotted lines connect each threat surface node to the components it targets. Trust boundaries are labeled on relevant data flow edges.
+
+| Threat Surface | Label | Targets |
+|---|---|---|
+| TS1 | XSS, MITM, Input Injection | Web Frontend, Merchant Portal |
+| TS2 | Broken Auth, Session Hijack | Authentication Service, Backend API |
+| TS3 | SQL Injection, Data Breach | User DB, Transaction DB, Merchant DB |
+| TS4 | MITM, Replay Attack | Payment Gateway, Core Banking System |
+| TS5 | Privilege Escalation, Insider Threat | Admin Portal |
+
+---
+
+## 3.3 STRIDE Threat Model Table
+
+| # | Threat | STRIDE Category | Affected Component | Impact | Likelihood | Risk Level |
+|---|---|---|---|---|---|---|
+| T1 | Attacker intercepts HTTPS traffic between customer and Web Frontend via MITM | Information Disclosure | Web Frontend (TB1a) | Critical — payment card data and credentials exposed | Low (requires TLS downgrade or network position) | **Medium** |
+| T2 | Attacker injects malicious scripts into the Web Frontend to steal session tokens (XSS) | Tampering / Information Disclosure | Web Frontend, Merchant Portal (TS1) | High — session hijacking leads to account takeover | High (very common web attack vector) | **High** |
+| T3 | Attacker submits malformed input to the Backend API to inject commands or manipulate logic | Tampering | Backend API (TB2) | High — could corrupt transaction logic or extract data | Medium (requires API knowledge) | **High** |
+| T4 | Attacker obtains a valid session token and replays it to impersonate an authenticated user | Spoofing | Authentication Service (TS2) | High — full account access without credentials | Medium (tokens often leaked via XSS or logs) | **High** |
+| T5 | Brute-force or credential stuffing attack against the login endpoint | Spoofing | Authentication Service (TS2) | High — unauthorized account access | High (automated tooling is widely available) | **High** |
+| T6 | Authenticated merchant submits SQL injection payload through the Merchant Portal | Tampering / Information Disclosure | Merchant DB, Transaction DB (TS3) | Critical — full database read or deletion | Medium (requires bypassing input validation) | **High** |
+| T7 | Backend API sends payment data over improperly validated TLS channel, enabling MITM | Information Disclosure | Payment Gateway (TB4, TS4) | Critical — live payment card data in transit exposed | Low (requires network-level attacker on backend path) | **Medium** |
+| T8 | Attacker replays a previously captured authorized payment request to the Core Banking System | Spoofing | Core Banking System (TB5, TS4) | High — unauthorized fund transfer | Low (requires capture of signed request) | **Medium** |
+| T9 | Admin account is compromised; attacker escalates privileges to modify system configuration | Elevation of Privilege | Admin Portal (TS5, TB6) | Critical — full system control | Medium (phishing or credential reuse) | **High** |
+| T10 | Malicious insider accesses the Admin Portal from an authorized workstation to exfiltrate data | Elevation of Privilege / Information Disclosure | Admin Portal (TS5) | Critical — bulk data access without triggering alerts | Medium (insider access is authorized at the network layer) | **High** |
+| T11 | Application logs are tampered with to erase evidence of a breach | Tampering | Logging & Monitoring System | High — forensic investigation is undermined | Medium (requires write access to log storage) | **High** |
+| T12 | Logging system fails to capture an attack event due to misconfiguration or bypass | Repudiation | Logging & Monitoring System | Medium — inability to detect or attribute attacks | Medium (easy to miss without explicit audit rules) | **Medium** |
+| T13 | Encrypted data at rest is exposed due to key mismanagement (keys stored alongside data) | Information Disclosure | User DB, Merchant DB, Transaction DB (TS3) | Critical — database encryption is rendered useless | Low (requires key infrastructure access) | **Medium** |
+| T14 | Denial of Service attack floods the Backend API, disrupting payment processing | Denial of Service | Backend API | High — payment processing fully unavailable | High (DDoS is low-cost to execute) | **High** |
+| T15 | Merchant uses their own authorized credentials to access or modify another merchant's data | Elevation of Privilege | Backend API, Merchant DB | High — cross-tenant data breach | Medium (depends on authorization logic correctness) | **High** |
+
+---
+
+## 3.4 Risk Reasoning
+
+Risk levels were derived by applying the formula: **Risk = Impact × Likelihood**, mapped to a qualitative scale (Low / Medium / High).
+
+**High-risk threats (T2, T3, T4, T5, T6, T9, T10, T11, T14, T15)**
+
+These threats are rated High because they combine a High or Critical impact with a Medium or High likelihood. XSS (T2), credential stuffing (T5), SQL injection (T6), and DDoS (T14) are extremely common in web-facing payment systems and require minimal attacker skill. Privilege escalation through the Admin Portal (T9, T10) carries Critical impact because admin access grants control over the entire system, including all user data and payment routing. Log tampering (T11) is rated High because it directly undermines the effectiveness of every other control — an attacker who can erase audit trails can operate undetected indefinitely. Cross-tenant access (T15) is High because incorrectly scoped authorization in the Backend API could allow one merchant to access another's financial data, constituting both a breach and a compliance violation.
+
+**Medium-risk threats (T1, T7, T8, T12, T13)**
+
+These threats are rated Medium because their likelihood is constrained by technical prerequisites. MITM attacks on TLS connections (T1, T7) require an attacker to be positioned on the network path and to successfully perform a TLS downgrade or certificate substitution — both of which are significantly harder to achieve when TLS is correctly configured. Replay attacks (T8) against the Core Banking System require prior capture of a valid signed request, which is non-trivial. Log misconfiguration (T12) and encryption key mismanagement (T13) are operationally plausible but require specific deployment failures to be exploitable. These threats are not dismissed — they represent residual risks that controls must specifically address.
+
+---
+
