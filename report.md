@@ -102,3 +102,34 @@ Trust boundaries define points where data crosses between security zones, requir
 The diagram illustrates all system components, security zones, and data flows between the Public Zone, Application Zone, Data Zone, Admin Zone, and External Systems Zone.
 
 ---
+
+# Task 2 – Asset Identification & Security Objectives
+
+## 2.1 Critical Assets
+
+| Asset | Type | CIA Priority | Rationale |
+|---|---|---|---|
+| User Credentials | Sensitive | C, I | Must be kept confidential to prevent account takeover. Integrity ensures credentials are not silently altered. |
+| Payment Card Data | Financial / Critical | C, I, A | Highest sensitivity. Must be confidential (fraud prevention), accurate (integrity), and available during transactions. |
+| Transaction Records | Financial | I, A | Must be tamper-proof for legal compliance and dispute resolution. Must remain available for auditing and reporting. |
+| Merchant Financial Data | Financial | C, I | Merchant account details and revenue data are commercially sensitive and must not be exposed or modified. |
+| Admin Credentials | Critical | C, I | Compromise grants full system control. Must be confidential and unalterable. |
+| Authentication Tokens | Sensitive | C, I | Tokens must be secret to prevent session hijacking, and must not be forged or replayed. |
+| Audit Logs | Operational | I, A | Must remain unmodified to ensure accountability. Must be available for incident response and forensic analysis. |
+| Business Logic | Intellectual Property | I | If tampered with, attackers could manipulate transaction processing to commit fraud. |
+
+---
+
+## 2.2 Security Objectives
+
+The following four security objectives apply across all assets. Each asset is mapped to the objectives it prioritises.
+
+**Confidentiality** — Sensitive data must only be accessible to authorised parties. Applies to user credentials, payment card data, merchant financial data, admin credentials, and authentication tokens.
+
+**Integrity** — Data must remain accurate and unmodified throughout its lifecycle. Applies to all assets, particularly transaction records, audit logs, and business logic where tampering has direct financial or legal consequences.
+
+**Availability** — Critical systems and data must remain accessible when needed. Applies to transaction records and payment card data, where downtime directly disrupts payment processing.
+
+**Accountability** — Actions performed by users and administrators must be traceable. Applies to audit logs and administrative actions, ensuring non-repudiation and enabling forensic investigation.
+
+---
