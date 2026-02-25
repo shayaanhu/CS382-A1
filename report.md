@@ -194,3 +194,157 @@ These threats are rated Medium because their likelihood is constrained by techni
 
 ---
 
+# Task 4 – Secure Architecture Design
+
+Security controls proposed here are architectural — they operate at the system design level, not as code-level patches. Each control is justified by direct reference to threats identified in the STRIDE analysis (Task 3) and mapped to the CIA triad objectives defined in Task 2.
+
+---
+
+## 4.1 Identity and Access Management (IAM)
+
+### Multi-Factor Authentication (MFA)
+All user login flows — customer, merchant, and administrator — must require a second authentication factor beyond a password. For administrators, MFA must be mandatory and enforced at the network level (no login plane access without passing MFA).
+
+**Justification:** Directly mitigates T5 (credential stuffing) and T9 (admin account compromise). Even when credentials are leaked or guessed, MFA prevents an attacker from completing the login. Admin MFA specifically addresses T10 (malicious insider) by adding a second barrier to high-value access.
+
+### Role-Based Access Control (RBAC)
+Every component in the system must enforce access based on role, not just identity. Customers may only access their own transactions and payment initiation. Merchants may only access their own merchant account and transaction history. Administrators have scoped access to configuration — not raw database access.
+
+**Justification:** Directly mitigates T15 (cross-tenant data access) and T10 (insider abuse). Role scoping ensures that even an authenticated and legitimate user cannot access resources outside their role boundary.
+
+### Least Privilege Enforcement
+Every internal service-to-service connection must use a credential that grants only the permissions required for its specific function. The Backend API must not hold database credentials that permit schema modification. The logging service must hold write-only credentials against the audit log store.
+
+**Justification:** Limits blast radius of T6 (SQL injection) and T9 (privilege escalation). If the Backend API is compromised, the attacker inherits only its restricted permissions — not full database control.
+
+### Separate Admin Authentication Plane
+The Admin Portal must use a completely separate authentication mechanism from the customer and merchant flows. This means a different login endpoint, different session store, and different credential management system, accessible only from restricted internal networks (TB7).
+
+**Justification:** Mitigates T9 and T10. Separating the admin plane ensures that a compromise of the customer-facing authentication system does not grant admin access, and that admin sessions cannot be hijacked via XSS attacks on the public frontend.
+
+### Strong Session Management
+All sessions must use cryptographically random, short-lived tokens. Tokens must be invalidated on logout, after inactivity, and on re-authentication events. Tokens must be transmitted only over HTTPS and stored in HttpOnly, Secure cookies — never in localStorage.
+
+**Justification:** Mitigates T4 (session replay) and T2 (XSS-based token theft). HttpOnly cookies prevent JavaScript access to tokens, directly limiting the damage XSS can cause. Short expiry limits the exploitation window of a stolen token.
+
+---
+
+## 4.2 Network Segmentation
+
+The architecture enforces five security zones with strict inter-zone communication rules:
+
+| Zone | Contents | Communication Rules |
+|---|---|---|
+| Public Zone | Internet-facing users (customers, merchants) | May only reach Application Zone via TB1a, TB1b over HTTPS |
+| Application Zone | Web Frontend, Merchant Portal, Backend API, Auth Service, Logging | Internal components communicate over authenticated channels; Frontends have no direct access to Data Zone |
+| Data Zone | User DB, Merchant DB, Transaction DB | Accessible only from Backend API over authenticated, encrypted connections (TB3) |
+| External Systems Zone | Payment Gateway, Core Banking System | Accessible only from Backend API over Mutual TLS (TB4, TB5) |
+| Administrative Zone | Admin Portal | Accessible only via VPN or internal restricted network (TB7); communicates with Backend API via separate auth plane (TB6) |
+
+**Justification:** Segmentation limits lateral movement. If an attacker compromises the Web Frontend (via T2 or T3), they cannot directly reach databases or admin systems — they must pivot through the Backend API, which enforces authentication and authorization at every boundary. This constrains T9, T10, T15 and reduces the blast radius of all other threats.
+
+---
+
+## 4.3 Data Protection
+
+### TLS for All Communications
+All in-transit communication must use TLS 1.2 or higher with valid certificates. Mutual TLS (mTLS) must be used for Backend API → Payment Gateway (TB4) and Backend API → Core Banking System (TB5), ensuring that both sides authenticate the connection.
+
+**Justification:** Mitigates T1 (customer MITM), T7 (payment data in transit), and T8 (replay attacks). mTLS specifically prevents an attacker from impersonating the Payment Gateway, and adds replay resistance because requests are signed by the client certificate.
+
+### Encryption at Rest
+All three databases must use AES-256 encryption at rest. Field-level encryption must be applied to especially sensitive columns such as payment card data and authentication credentials, using keys stored separately from the database files.
+
+**Justification:** Mitigates T13. Encryption at rest ensures that raw database files, backups, or storage media cannot be read without the decryption keys, even if physical media is compromised.
+
+### Payment Card Data Tokenization
+Card data must be tokenized immediately after initial capture at the point of transaction initiation. The actual card number (PAN) must not be stored in the Transaction Database or transmitted beyond the tokenization boundary. Only the token is retained for subsequent reference.
+
+**Justification:** Reduces the value of a successful T6 or T13 attack. Even if an attacker exfiltrates the Transaction Database, they obtain non-reversible tokens rather than live card numbers, which cannot be used for fraud.
+
+### Strong Credential Hashing
+User passwords must be hashed using a memory-hard algorithm (bcrypt or Argon2) before storage. No plaintext or weakly hashed passwords may be stored at any layer.
+
+**Justification:** Mitigates T6 and T13. If the User DB is exfiltrated, passwords cannot be trivially recovered through brute-force or rainbow table attacks.
+
+---
+
+## 4.4 Secrets Management
+
+### No Hardcoded Credentials
+All API keys, database passwords, TLS certificates, and service credentials must be injected at runtime from a dedicated secrets management solution. No credentials may appear in source code, configuration files committed to version control, or build artefacts.
+
+**Justification:** Prevents a class of vulnerability where a source code exposure immediately results in full system compromise. Directly relevant to T9 and T13.
+
+### Secure Secret Storage with Scoped Access
+A dedicated secrets management system must store all credentials. Secrets must be scoped to specific services — the Backend API credential for the Payment Gateway must not be accessible to the Logging Service. Access to secrets must be logged and audited.
+
+**Justification:** Enforces least privilege at the credential level, limiting what a compromised service can access. Supports T9 and T10 mitigations.
+
+### Key Rotation Policies
+Encryption keys, API keys, and session signing keys must be rotated on a defined schedule. Key rotation must be automated where possible to eliminate human error.
+
+**Justification:** Limits the window of exposure if a key is silently compromised. Directly addresses the residual risk in T13.
+
+---
+
+## 4.5 Monitoring and Logging
+
+### Centralized, Immutable Logging
+All components must emit structured logs to the centralized Logging & Monitoring System. The log store must be append-only — application-layer credentials must not have the ability to delete or modify existing log entries. Log access must require separate, elevated permissions distinct from application credentials.
+
+**Justification:** Directly mitigates T11 (log tampering) and T12 (log bypass). Immutability ensures that an attacker who compromises the application layer cannot retroactively erase evidence. Centralized collection ensures that component-level bypasses cannot achieve total log suppression.
+
+### Alerting on Suspicious Behavior
+The monitoring system must define automated alert rules for: repeated failed logins (→ T5), abnormal transaction volumes (→ T14), admin actions outside business hours (→ T10), and cross-tenant data access patterns (→ T15). Alerts must be routed to a human-monitored channel with defined response SLAs.
+
+**Justification:** Converts logging from a passive record into an active detection layer. This is the primary control against insider threats and ongoing attacks that bypass perimeter defenses.
+
+### Non-Repudiable Audit Trails for Admin Actions
+Every action taken through the Admin Portal — user modification, merchant configuration, system override — must generate a structured, immutable audit record including the acting user, timestamp, action taken, target resource, and source IP.
+
+**Justification:** Provides accountability (the fourth security objective from Task 2). Directly addresses T10 by ensuring that all insider actions are traceable and cannot be denied.
+
+---
+
+## 4.6 Secure Deployment Practices
+
+### Secure CI/CD Pipeline
+The build and deployment pipeline must incorporate automated security checks: static analysis (SAST), dependency vulnerability scanning (SCA), and secret detection. No deployment may proceed if critical-severity vulnerabilities are detected.
+
+**Justification:** Prevents the introduction of known-vulnerable libraries exploitable via T3 or T6, and prevents accidental credential exposure relevant to T9 and T13.
+
+### Infrastructure as Code (IaC)
+All infrastructure — networks, firewall rules, database configurations, and zone definitions — must be defined in version-controlled IaC files. Manual configuration changes must be prohibited in production environments.
+
+**Justification:** Enforces the network segmentation design in 4.2. IaC prevents configuration drift, where manual changes inadvertently open trust boundaries or disable security controls, undermining T1, T7, and T9 mitigations.
+
+### Patch Management
+All operating system, runtime, and library dependencies must be patched within a defined SLA (critical CVEs within 72 hours). A software bill of materials (SBOM) must be maintained to enable rapid identification of affected components following a new vulnerability disclosure.
+
+**Justification:** Reduces the attack surface for all threats by ensuring that known exploitable vulnerabilities are not present in the deployed system.
+
+---
+
+## 4.7 Defense-in-Depth Summary
+
+The controls above are not independent solutions — they are layered to create defense-in-depth, where each High-risk threat from Task 3 is addressed by at least two independent controls:
+
+| Threat | Primary Control | Secondary Control | Residual Risk After Controls |
+|---|---|---|---|
+| T2 (XSS, token theft) | HttpOnly session cookies | Content Security Policy (deployment layer) | Minimal — tokens inaccessible to JavaScript |
+| T5 (credential stuffing) | MFA | Rate limiting on login endpoint | Residual DoS risk on login endpoint |
+| T6 (SQL injection) | Parameterized queries (deployment), RBAC | Least privilege DB credentials, encryption at rest | Constrained — no credential grants schema-wide access |
+| T9 (admin compromise) | Separate admin auth plane, MFA | RBAC, immutable audit trails | Insider with physical key access remains out-of-scope risk |
+| T10 (malicious insider) | Immutable audit trails, behavioral alerting | RBAC, least privilege, separation of duties | Legitimate access cannot be prevented — only detected and investigated |
+| T11 (log tampering) | Immutable, append-only log store | Separate log credentials scoped write-only | Compromise of log infrastructure platform itself |
+| T14 (DDoS) | Rate limiting (deployment layer) | Network segmentation limits exposed attack surface | Full volumetric DDoS requires upstream infrastructure mitigation |
+| T15 (cross-tenant access) | RBAC, scoped API authorization | Audit alerting on anomalous access patterns | Depends on correct implementation of authorization logic |
+
+No single control eliminates any threat completely. The value of defense-in-depth is that an attacker must defeat multiple independent layers — a failure in one layer (e.g., MFA bypass) does not translate into a full breach, because RBAC, audit logging, and network segmentation remain independently in place.
+
+---
+
+
+---
+
