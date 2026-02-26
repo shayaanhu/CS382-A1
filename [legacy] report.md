@@ -1,10 +1,10 @@
 # CS382 – Secure Architecture & Threat Modeling
-**Habib University | Semester 8 | Cybersecurity (CS382)**
+**Habib University | Semester 8 | Cybersecurity: Theory, Tools, and Practices (CS382)**
 
 | | |
 |---|---|
-| **Student** | [Muhammad Shayaan Qazi] |
-| **Student ID** | [MS08066] |
+| **Student** | Muhammad Shayaan Qazi |
+| **Student ID** | MS08066 |
 | **Assignment** | Assignment 1 – Secure Architecture & Threat Modeling |
 | **Scenario** | Option A – Online Payment Processing Application |
 | **Submitted** | February 2026 |
@@ -132,7 +132,7 @@ The diagram illustrates all system components, security zones, and data flows be
 
 The following four security objectives apply across all assets. Each asset is mapped to the objectives it prioritises.
 
-**Confidentiality** — Sensitive data must only be accessible to authorised parties. Applies to user credentials, payment card data, merchant financial data, admin credentials, and authentication tokens.
+**Confidentiality** — Sensitive data must only be accessible to authorized parties. Applies to user credentials, payment card data, merchant financial data, admin credentials, and authentication tokens.
 
 **Integrity** — Data must remain accurate and unmodified throughout its lifecycle. Applies to all assets, particularly transaction records, audit logs, and business logic where tampering has direct financial or legal consequences.
 
