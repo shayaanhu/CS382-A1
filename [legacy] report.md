@@ -1,5 +1,13 @@
-# CS382 – Secure Architecture & Threat Modeling Report
-## Scenario: Option A – Online Payment Processing Application
+# CS382 – Secure Architecture & Threat Modeling
+**Habib University | Semester 8 | Cybersecurity (CS382)**
+
+| | |
+|---|---|
+| **Student** | [Muhammad Shayaan Qazi] |
+| **Student ID** | [MS08066] |
+| **Assignment** | Assignment 1 – Secure Architecture & Threat Modeling |
+| **Scenario** | Option A – Online Payment Processing Application |
+| **Submitted** | February 2026 |
 
 ---
 
@@ -97,7 +105,7 @@ Trust boundaries define points where data crosses between security zones, requir
 
 ## 1.7 Architecture Diagram
 
-![Architecture Diagram](./architechture_diagram.png)
+![Architecture Diagram](./architecture_diagram.png)
 
 The diagram illustrates all system components, security zones, and data flows between the Public Zone, Application Zone, Data Zone, Admin Zone, and External Systems Zone.
 
@@ -345,6 +353,178 @@ No single control eliminates any threat completely. The value of defense-in-dept
 
 ---
 
+## 4.8 Updated Secure Architecture Diagram
+
+![Secure Architecture Diagram](./secure_architecture_diagram.png)
+
+The updated diagram incorporates all architectural security controls defined in sections 4.1–4.6. Key additions over the base architecture diagram include: WAF and rate limiter at the public entry point, HttpOnly cookie enforcement on frontends, MFA and short-lived tokens on the Auth Service, RBAC enforcement on the Backend API, append-only logging with alerting on the Logging & Monitoring system, a separate Admin Auth Plane, AES-256 encryption and tokenization labels on the Data Zone, mTLS on all external system connections, and a Secrets Manager injecting runtime credentials into the Backend API.
 
 ---
 
+
+# Task 5 – Risk Treatment & Residual Risk
+
+## 5.1 Methodology
+
+For each High-risk threat identified in Task 3, a treatment decision was made using the standard four options: **Mitigate** (apply controls to reduce likelihood or impact), **Transfer** (shift responsibility to a third party), **Accept** (acknowledge the risk without additional action), or **Avoid** (eliminate the activity or component that introduces the risk). Medium-risk threats are addressed in section 5.3.
+
+---
+
+## 5.2 Risk Treatment Table — High-Risk Threats
+
+| # | Threat | Risk Level | Treatment | Justification | Residual Risk |
+|---|---|---|---|---|---|
+| T2 | XSS — session token theft via malicious script injection | High | **Mitigate** | HttpOnly cookies prevent script access to tokens. Content Security Policy (CSP) restricts script execution sources. Input sanitization at the API layer prevents stored XSS. | A sophisticated CSP bypass or browser zero-day could still expose tokens. Risk is low after controls but not zero. |
+| T3 | API input injection — malformed requests manipulate backend logic | High | **Mitigate** | Parameterized queries and input validation at the API layer prevent injection. RBAC limits what any single injected request can affect. | If a new injection vector is discovered in an unvalidated code path, it could succeed. Dependent on implementation quality. |
+| T4 | Session replay — stolen token reused to impersonate a user | High | **Mitigate** | Short-lived tokens with binding to session context (IP or device fingerprint) limit replay window. Token invalidation on logout and re-auth events. | Replay within the token's valid window remains possible if the token is stolen before expiry. |
+| T5 | Credential stuffing — automated login attempts with leaked passwords | High | **Mitigate** | MFA makes stolen credentials alone insufficient. Rate limiting and account lockout reduce brute-force feasibility. | Users who bypass MFA enrollment or use weak second factors remain exposed. Cannot fully prevent targeting of non-MFA accounts. |
+| T6 | SQL injection by authenticated merchant through Merchant Portal | High | **Mitigate** | Parameterized queries, least privilege DB credentials, and RBAC prevent injection and limit blast radius. Card tokenization reduces the value of any data extracted. | Depends on consistent implementation across all DB-touching code paths. A missed unparameterized query creates a residual window. |
+| T9 | Admin account compromise via phishing or credential reuse | High | **Mitigate** | Separate admin auth plane isolates compromise. MFA enforced at network level. Admin actions fully logged with immutable audit trail. | A sufficiently sophisticated spear-phishing attack that defeats MFA (e.g., real-time phishing proxy) remains a residual risk. |
+| T10 | Malicious insider abuses Admin Portal to exfiltrate data | High | **Mitigate + Accept (partial)** | RBAC, least privilege, and behavioral alerting reduce both access scope and detection time. Full prevention of insider abuse using legitimate access is architecturally impossible. | An authorized insider with a legitimate use case for the data they exfiltrate cannot be prevented at the architecture layer — only detected after the fact. This residual risk is accepted as inherent to insider threat scenarios. |
+| T11 | Audit logs tampered with to erase breach evidence | High | **Mitigate** | Append-only log store with write-only application credentials makes log deletion impossible from the application layer. Separate log access credentials require elevation. | If the log infrastructure platform itself (storage system or log aggregator) is compromised at a privileged level, log integrity could be violated. This is an infrastructure-layer risk outside the application architecture scope. |
+| T14 | DDoS attack floods Backend API, disrupting payment processing | High | **Transfer + Mitigate** | Volumetric DDoS mitigation is transferred to upstream infrastructure (ISP-level or network provider scrubbing). Rate limiting and network segmentation provide application-layer mitigation for lower-volume attacks. | Full absorption of a large-scale volumetric DDoS attack cannot be guaranteed without dedicated upstream scrubbing infrastructure. This is accepted as a deployment-time operational decision. |
+| T15 | Cross-tenant data access — merchant accesses another merchant's data | High | **Mitigate** | RBAC enforces tenant-scoped queries. All API calls are authorized against the requesting principal's tenant context, not just their authentication status. Audit alerting detects anomalous cross-tenant access patterns. | Residual risk exists in the correctness of the authorization implementation. A logic error in tenant scoping would not be caught by architectural controls alone — it requires code review and testing. |
+
+---
+
+## 5.3 Medium-Risk Threats — Treatment Summary
+
+| # | Threat | Treatment | Rationale |
+|---|---|---|---|
+| T1 | MITM on customer HTTPS traffic | Mitigate | TLS 1.2+ with valid certificates. WAF at entry point. |
+| T7 | MITM on Backend API → Payment Gateway channel | Mitigate | mTLS enforces mutual authentication. Certificate pinning optional for additional hardening. |
+| T8 | Replay attack on Core Banking System | Mitigate | mTLS + signed, timestamped requests with nonces make replay infeasible. |
+| T12 | Logging misconfiguration — attack events not captured | Mitigate | Centralized logging with explicit audit rules covering all required event types. Alerting on log gaps. |
+| T13 | Encryption key mismanagement — encrypted data exposed | Mitigate | Secrets manager with scoped access, automated key rotation, and keys stored separately from data. |
+
+---
+
+## 5.4 Residual Risk Summary
+
+After all treatment decisions are applied, three categories of residual risk remain:
+
+**Implementation-dependent residual risks (T3, T6, T15)**
+
+These risks depend on the correctness of the implementation, not the architecture. Parameterized queries, RBAC scope, and tenant authorization logic must be correctly written in every affected code path. Architecture sets the policy; code must enforce it. No architectural control can substitute for a code review and security testing process at deployment time.
+
+**Insider threat residual risk (T10)**
+
+An authorized user with legitimate access to high-value data cannot be architecturally prevented from misusing that access — they can only be detected. The residual risk is that detection occurs after the fact, and that some exfiltration may occur before alerting triggers. This is accepted as inherent to any system that must grant real access to real users.
+
+**Infrastructure-layer residual risks (T11, T14)**
+
+Log infrastructure compromise and large-scale DDoS require mitigations that operate below the application architecture layer — at the infrastructure, ISP, or hardware level. These risks are explicitly accepted as out of scope for this application architecture design, and must be addressed through operational and infrastructure controls outside this report's scope.
+
+---
+
+# Task 6 – Final Architecture and Threat Report
+
+## 6.1 Executive Summary
+
+This report presents a complete secure architecture design for an online payment processing application. Starting from a defined system architecture (Task 1), critical assets and security objectives were identified (Task 2), followed by a structured STRIDE threat model across all required threat areas (Task 3). Architectural security controls were proposed in response to identified threats (Task 4), and each high-risk threat was given a formal risk treatment decision with residual risk explanation (Task 5).
+
+The architecture is cloud-agnostic, assumes internet-facing exposure, and accounts for both external attackers and malicious insiders. All controls are architectural — no code-level fixes are proposed, and all decisions are justified using risk-based reasoning.
+
+---
+
+## 6.2 System Overview
+
+The system is a web-based online payment processing platform enabling customers to pay merchants through card transactions, integrated with external banking infrastructure. It exposes a customer-facing web interface, a merchant management portal, and a restricted administrative portal, backed by a central API, authentication service, and logging system. Three databases store user, merchant, and transaction data. External integrations include a Payment Gateway and a Core Banking System.
+
+Full component definitions, user roles, data types, external dependencies, and trust boundary mappings are documented in Task 1 of this report.
+
+---
+
+## 6.3 Architecture Diagrams
+
+### Base Architecture
+![Architecture Diagram](./architecture_diagram.png)
+
+Shows all system components, security zones (Public, Application, Data, Admin, External Systems), and data flows between them.
+
+### Threat Surface Diagram
+![Threat Surface Diagram](./threat_surface_diagram.png)
+
+Annotates the base architecture with five threat surfaces (TS1–TS5), identifying components targeted by XSS/MITM, broken authentication, SQL injection, MITM on external channels, and privilege escalation.
+
+### Secure Architecture Diagram
+![Secure Architecture Diagram](./secure_architecture_diagram.png)
+
+Updated architecture diagram incorporating all security controls: WAF, MFA, RBAC, HttpOnly cookies, mTLS, encryption at rest, tokenization, append-only logging, separate admin auth plane, and secrets management.
+
+---
+
+## 6.4 Asset Inventory Summary
+
+Full asset inventory with CIA priority mapping is documented in Task 2. Critical assets include:
+
+| Asset | CIA Priority | Highest Risk |
+|---|---|---|
+| Payment Card Data | C, I, A | Tokenized after capture; protected by TLS and encryption at rest |
+| User Credentials | C, I | bcrypt hashed; MFA enforced |
+| Admin Credentials | C, I | Separate auth plane; MFA mandatory |
+| Transaction Records | I, A | Immutable logs; tamper resistance |
+| Audit Logs | I, A | Append-only store; separate access credentials |
+
+---
+
+## 6.5 Threat Model Summary
+
+Full STRIDE threat model is documented in Task 3. 15 threats were identified across all 6 required areas:
+
+| Threat Area | Threats Identified | Highest Risk |
+|---|---|---|
+| Authentication | T4, T5 | Credential stuffing (High), session replay (High) |
+| Authorization | T9, T10, T15 | Admin compromise (High), insider abuse (High), cross-tenant access (High) |
+| Data Storage | T6, T13 | SQL injection (High), key mismanagement (Medium) |
+| API Communication | T1, T3, T7, T8 | Input injection (High), MITM on payment channel (Medium) |
+| Logging & Monitoring | T11, T12 | Log tampering (High), log bypass (Medium) |
+| Administrative Access | T9, T10 | Admin compromise (High), malicious insider (High) |
+
+---
+
+## 6.6 Security Controls Summary
+
+Full control specifications and justifications are in Task 4. Controls are organized by category:
+
+| Category | Key Controls |
+|---|---|
+| Identity & Access Management | MFA, RBAC, least privilege, separate admin auth plane, HttpOnly session tokens |
+| Network Segmentation | 5-zone architecture with strict inter-zone communication rules |
+| Data Protection | TLS 1.2+, mTLS, AES-256 at rest, card tokenization, bcrypt password hashing |
+| Secrets Management | Runtime credential injection, scoped access, automated key rotation |
+| Monitoring & Logging | Append-only centralized logs, behavioral alerting, non-repudiable admin audit trails |
+| Secure Deployment | SAST/SCA in CI/CD, Infrastructure as Code, patch management SLA |
+
+---
+
+## 6.7 Residual Risks
+
+Full risk treatment decisions and residual risk analysis are in Task 5. Three categories of residual risk remain after all controls are applied:
+
+1. **Implementation-dependent risks (T3, T6, T15)** — Architectural controls set policy; correct implementation of parameterized queries, RBAC scoping, and tenant authorization logic is required at the code level.
+2. **Insider threat residual (T10)** — Authorized users with legitimate access cannot be architecturally prevented from misuse — only detected after the fact via audit logs and behavioral alerting.
+3. **Infrastructure-layer risks (T11, T14)** — Log platform compromise and large-scale DDoS require infrastructure-level controls outside the application architecture scope. Accepted as operational risks.
+
+---
+
+## 6.8 Assumptions
+
+- The system is internet-facing; no assumption of network-level perimeter protection is made.
+- The Payment Gateway and Core Banking System comply with industry cryptographic standards (TLS, signed requests).
+- All users — including internal staff — are considered potential threat actors under a zero-trust principle.
+- Insider threats from authorized users are included in scope.
+- No vendor-specific cloud services are assumed; the architecture is cloud-agnostic and portable.
+- Regulatory frameworks (e.g., PCI-DSS, GDPR) are not explicitly mapped, though the controls proposed align with their requirements.
+
+---
+
+## 6.9 Limitations
+
+- This is a high-level architectural design. Implementation correctness — parameterized queries, CSP headers, RBAC scope logic — is outside the scope of this report and must be ensured through code review and security testing.
+- No real-world infrastructure constraints are modeled. Network topology, physical security, and hardware-level controls are not addressed.
+- No specific regulatory framework is assumed. Compliance mapping to PCI-DSS or GDPR would require additional analysis.
+- Volumetric DDoS mitigation is beyond the application architecture layer and is not fully addressed here.
+- The threat model and controls are based on the defined system scope. New components or integrations added after this report would require a fresh threat modeling exercise.
+
+---
