@@ -1,5 +1,5 @@
 # CS382 – Secure Architecture & Threat Modeling
-**Habib University | Semester 8 | Cybersecurity (CS382)**
+**Habib University | Semester 8 | Cybersecurity: Theory, Tools, and Practices (CS382)**
 
 | | |
 |---|---|
